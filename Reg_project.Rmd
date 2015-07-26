@@ -1,0 +1,147 @@
+---
+title: "Regression Model Course Project"
+author: "Liang"
+date: "July 25, 2015"
+output: 
+  pdf_document:
+    fig_width: 6
+    fig_height: 3
+---
+
+In this project, I studied the **mtcars** data-set. The two questions I tried to answer are "Is an automatic or manual transmission better for MPG" and "Quantify the MPG difference between automatic and manual transmissions". The R Makrdown file can be find here: <https://github.com/LiangGao/MarkDownFiles>. In spite of the seemingly linear relation between transmission type and MPG, the transmission type might be the least important feature affecting the MPG, and it failed to give a reasonable prediction for the MPG difference between two transmission types. While we cannot claim either transmission is better for MPG, the vehicle weight is the true feature determining the vehicle MPG, and the variable hiding in the background of the relation between MPG and transmission type.
+
+I started with a simple linear fitting between MPG and transmission type (0 = automatic, 1 = manual). The result of the fitting, the residual, and the confidence (pink) + prediction (teal) interval figure are as following:
+```{r, echo=FALSE}
+library(ggplot2)
+library(gridExtra)
+options(digits=3)
+data(mtcars)
+fit0 = lm(mpg ~ factor(am), data = mtcars)
+g1 = ggplot(mtcars, aes(x = am, y = mpg))
+g1 = g1 + geom_smooth(method = 'lm', colour = 'black')
+g1 = g1 + geom_point(size = 4, colour = 'black', alpha = 0.4)
+g1 = g1 + geom_point(size = 2, colour = 'red', alpha = 0.4)
+g1 = g1 + ylim(0, 40) + xlab('transmission type') + ylab('MPG')
+g1 = g1 + theme(axis.text=element_text(size=8))
+
+df = data.frame(am = as.factor(mtcars$am), y = resid(fit0))
+g2 = ggplot(df, aes(x = am, y = y))
+g2 = g2 + ylab('residual') + xlab('transmission type')
+g2 = g2 + geom_hline(yintercept = 0, size = 1)
+g2 = g2 + geom_point(size = 4, colour = 'black', alpha = 0.4)
+g2 = g2 + geom_point(size = 2, colour = 'green', alpha = 0.4)
+g2 = g2 + scale_x_discrete(limit = c('0', '1'), labels = c("automatic", "manual"))
+g2 = g2 + theme(axis.text=element_text(size=8))
+
+fit10 = lm(mpg ~ factor(am), data = mtcars)
+newx = data.frame(am = sample(20)%%2)
+p1 = data.frame(predict(fit10, newdata = newx, interval = ('confidence')))
+p2 = data.frame(predict(fit10, newdata = newx, interval = ('prediction')))
+p1$interval = 'conf'
+p2$interval = 'pred'
+p1$x = newx$am
+p2$x = newx$am
+dat = rbind(p1,p2)
+names(dat)[1] = 'y'
+
+g3 = ggplot(dat, aes(x = x, y = y))
+g3 = g3 + geom_ribbon(aes(ymin = lwr, ymax = upr, fill = interval), alpha = 0.2)
+g3 = g3 + geom_line()
+g3 = g3 + geom_point(data = data.frame(x = mtcars$am, y = mtcars$mpg), aes(x = x, y = y), 
+                     colour = 'red', alpha = 0.4, size = 3)
+g3 = g3 + scale_fill_discrete(guide=FALSE)
+# g3 = g3 + scale_x_discrete(breaks=NULL)
+g3 = g3 + ylim(0, 40) + xlab('transmission type') + ylab('MPG')
+g3 = g3 + theme(axis.text=element_text(size=8))
+
+g = grid.arrange(g1, g2, g3, ncol=3)
+```
+
+Although there is a seemingly linear relationship between the transmission type and MPG, the residual is too large to be a good model.
+
+To quantify the MPG difference between automatic and manual transmissions, I could run the following code
+```{r}
+fit0 = lm(mpg ~ factor(am), data = mtcars)
+sumCoef = summary(fit0)$coefficients
+sumCoef[2,1] + c(-1, 1) * qt(0.975, df = fit0$df) * sumCoef[2,2]
+```
+The result indicate that the MPG difference between automatic and manual transmission vehicles is between 3.64 and 10.85 (95% confidence interval). Considering the standard deviation of the MPG itself is about 6.03. This answer really doesn't provide any useful information.
+
+Next I performed the same liner fitting to other possible predictor variables, such as the number of cylinders (cyl), horsepower (hp), weight (lb/1000), and number of gears (gear), and wrote down the R-squared values and p-values:
+
+```{r, echo=FALSE}
+fit = lm(mpg ~ factor(am), data = mtcars)
+x0 = c(summary(fit)$r.squared,summary(fit)$coefficient[2,4])
+fit = lm(mpg ~ (cyl), data = mtcars)
+x1 = c(summary(fit)$r.squared,summary(fit)$coefficient[2,4])
+fit = lm(mpg ~ hp, data = mtcars)
+x2 = c(summary(fit)$r.squared,summary(fit)$coefficient[2,4])
+fit = lm(mpg ~ wt, data = mtcars)
+x3 = c(summary(fit)$r.squared,summary(fit)$coefficient[2,4])
+fit = lm(mpg ~ (gear), data = mtcars)
+x4 = c(summary(fit)$r.squared,summary(fit)$coefficient[2,4])
+df = data.frame(transmission = x0, cyl = x1, hp = x2, wt = x3, gear = x4)
+row.names(df) = c('R-squared', 'p-value')
+df
+```
+It seems transmission is only better than gear when modeling the MPG. Everything considered, wt should be the best choice.
+
+I compared the two situations as following:
+
+1, to fit MPG (outcome) and transmission (am, predictor), then add wt:
+```{r}
+fit10 = lm(mpg ~ factor(am), data = mtcars)
+fit11 = update(fit10, mpg ~ factor(am) + wt)
+anova(fit10, fit11)$Pr[2]
+```
+2, to fit MPG (outcome) and wt (predictor), then add am:
+```{r}
+fit20 = lm(mpg ~ wt, data = mtcars)
+fit21 = update(fit20, mpg ~ wt + factor(am))
+anova(fit20, fit21)$Pr[2]
+```
+The large p value (0.988) of the second model indicates that it is unnecessary to add transmission type if the weight has been included in the model. On the other hand, the very small p value (~0) for the first situation means we should add the wt as another predictor in addition to transmission.
+
+Below are the fitting, the residual, and the confidence (pink) + prediction (teal) interval plot for linear regression model of MPG ~ weight:
+
+```{r, echo=FALSE}
+g1 = ggplot(mtcars, aes(x = wt, y = mpg))
+g1 = g1 + geom_smooth(method = 'lm', colour = 'black')
+g1 = g1 + geom_point(size = 4, colour = 'black', alpha = 0.4)
+g1 = g1 + geom_point(size = 2, colour = 'red', alpha = 0.4)
+g1 = g1 + ylim(0, 40) + xlab('weight (lb/1000)') + ylab('MPG')
+g1 = g1 + theme(axis.text=element_text(size=8))
+
+df = data.frame(x = mtcars$wt, y = resid(lm(mpg ~ wt, data = mtcars)))
+g2 = ggplot(df, aes(x = x, y = y))
+g2 = g2 + ylab('residual') + xlab('weight (lb/1000)')
+g2 = g2 + geom_hline(yintercept = 0, size = 1)
+g2 = g2 + geom_point(size = 4, colour = 'black', alpha = 0.4)
+g2 = g2 + geom_point(size = 2, colour = 'green', alpha = 0.4)
+g2 = g2 + ylim(-10, 10)
+g2 = g2 + theme(axis.text=element_text(size=8))
+
+fit20 = lm(mpg ~ wt, data = mtcars)
+newx = data.frame(wt = seq(min(mtcars$wt), max(mtcars$wt), length = 20))
+p1 = data.frame(predict(fit20, newdata = newx, interval = ('confidence')))
+p2 = data.frame(predict(fit20, newdata = newx, interval = ('prediction')))
+p1$interval = 'confidence'
+p2$interval = 'prediction'
+p1$x = newx$wt
+p2$x = newx$wt
+dat = rbind(p1,p2)
+names(dat)[1] = 'y'
+
+g3 = ggplot(dat, aes(x = x, y = y))
+g3 = g3 + geom_ribbon(aes(ymin = lwr, ymax = upr, fill = interval), alpha = 0.2)
+g3 = g3 + geom_line()
+g3 = g3 + geom_point(data = data.frame(x = mtcars$wt, y = mtcars$mpg), aes(x = x, y = y),
+                     colour = 'red', alpha = 0.4, size = 3)
+g3 = g3 +  scale_fill_discrete(guide=FALSE)
+g3 = g3 + ylim(0, 40) + xlab('weight (lb/1000)') + ylab('MPG')
+g3 = g3 + theme(axis.text=element_text(size=8))
+g = grid.arrange(g1, g2, g3, ncol=3)
+```
+
+Apparently, vehicle weight is a proper predictor for MPG. The reason behind the correlation between the transmission type and MPG is probably that the vehicles with auto transmission were heavier during the time period (70s) when the data were taken.
+
